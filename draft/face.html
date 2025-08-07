@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Robot Eyes Tracking with Fullscreen Mapping</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0; overflow: hidden; height: 100vh; width: 100vw;
+      background: #111;
+      font-family: 'Courier New', monospace;
+    }
+
+    #video {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      width: 320px;
+      height: 240px;
+      object-fit: cover;
+      transform: scaleX(-1);
+      border-radius: 8px;
+      box-shadow: 0 0 15px #00f;
+      z-index: 19;
+      background: black;
+    }
+
+    #overlay {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      width: 320px;
+      height: 240px;
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    #black-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background-color: black;
+      opacity: 0.1;
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    .robot-container {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 100vw;
+      height: 100vh;
+      transform: translate(-50%, -50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      user-select: none;
+      background: #222;
+      padding: 30px 50px;
+      border-radius: 30px;
+      box-shadow: 0 0 50px #00f;
+    }
+
+    .eyes-container {
+      display: flex;
+      gap: 60px;
+      margin-bottom: 30px;
+    }
+
+    .eye {
+      width: 560px;
+      height: 360px;
+      background: rgb(255, 255, 255);
+      border-radius: 60% / 80%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      box-shadow: inset 0 0 15px #666;
+      position: relative;
+      overflow: hidden;
+      animation: blink 4s infinite;
+    }
+
+    .eye:nth-child(2) { animation-delay: 0.2s; }
+
+    @keyframes blink {
+      0%, 90%, 100% { transform: scaleY(1); }
+      95% { transform: scaleY(0); }
+    }
+
+    .pupil {
+      width: 200px;
+      height: 200px;
+      background: #0000ff;
+      border-radius: 50%;
+      position: relative;
+      transition: transform 0.1s ease;
+    }
+
+    .mouth {
+      padding-top: 8%;
+      display: flex;
+      gap: 10px;
+      height: 150px;
+      align-items: center;
+    }
+
+    .bar {
+      width: 8px;
+      background: linear-gradient(180deg, #464646, #464646);
+      height: 20px;
+      border-radius: 4px;
+      transition: transform 0.15s ease;
+      transform-origin: center;
+    }
+
+    @media (max-width: 1400px) {
+      .robot-container { width: 1000px; height: 450px; padding: 20px 40px; }
+      .eye { width: 400px; height: 260px; }
+      .pupil { width: 140px; height: 140px; }
+      #video, #overlay { width: 240px; height: 180px; }
+    }
+
+    @media (max-width: 900px) {
+      .robot-container { width: 700px; height: 320px; padding: 15px 30px; }
+      .eye { width: 280px; height: 180px; }
+      .pupil { width: 100px; height: 100px; }
+      #video, #overlay { width: 180px; height: 135px; }
+    }
+
+    @media (max-width: 600px) {
+      .robot-container { width: 95vw; height: 250px; padding: 10px 20px; }
+      .eye { width: 45vw; height: 25vw; }
+      .pupil { width: 15vw; height: 15vw; }
+      #video, #overlay { width: 140px; height: 105px; }
+    }
+
+    @media (max-width: 400px) {
+      .robot-container { width: 90vw; height: 180px; padding: 8px 15px; }
+      .eye { width: 40vw; height: 22vw; }
+      .pupil { width: 12vw; height: 12vw; }
+      #video, #overlay { width: 110px; height: 82.5px; }
+    }
+  </style>
+</head>
+<body>
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="overlay" width="320" height="240"></canvas>
+  <div id="black-screen"></div>
+
+  <div class="robot-container">
+    <div class="eyes-container">
+      <div class="eye"><div class="pupil"></div></div>
+      <div class="eye"><div class="pupil"></div></div>
+    </div>
+    <div class="mouth" id="soundwave">
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+      <div class="bar"></div>
+    </div>
+  </div>
+
+  <script>
+
+    const video = document.getElementById('video');
+    const overlay = document.getElementById('overlay');
+    const ctx = overlay.getContext('2d');
+    const pupils = document.querySelectorAll('.pupil');
+    const eyes = document.querySelectorAll('.eye');
+
+    const MODEL_INPUT_WIDTH = 320;
+    const MODEL_INPUT_HEIGHT = 240;
+
+    navigator.mediaDevices.getUserMedia({ video: { width: MODEL_INPUT_WIDTH, height: MODEL_INPUT_HEIGHT, facingMode: 'user' } })
+      .then(stream => { video.srcObject = stream; })
+      .catch(err => { console.error('Camera error:', err); });
+
+    // Smoothing parameters
+    const SMOOTHING_ALPHA = 0.1; // Smaller = slower, smoother movement
+    const MOVE_THRESHOLD = 0.5;  // Minimum movement to update target position
+
+    let lastMoveX = 0;
+    let lastMoveY = 0;
+    let targetMoveX = 0;
+    let targetMoveY = 0;
+
+    let lostDetectionTime = null; // timestamp when detection lost
+    const WAIT_BEFORE_RESET_MS = 5000; // 5 seconds wait before moving back to center
+    let returningToCenter = false;
+
+    function updatePupilsByScreenPosition(boxX, boxY, boxW, boxH) {
+      if (!pupils || !eyes) return;
+
+      const screenCenterX = window.innerWidth / 2;
+      const screenCenterY = window.innerHeight / 2;
+
+      const scaleX = window.innerWidth / MODEL_INPUT_WIDTH;
+      const scaleY = window.innerHeight / MODEL_INPUT_HEIGHT;
+
+      const detectedCenterX = (boxX + boxW / 2) * scaleX;
+      const detectedCenterY = (boxY + boxH / 2) * scaleY;
+
+      let dx = detectedCenterX - screenCenterX;
+      let dy = detectedCenterY - screenCenterY;
+
+      const eyeRect = eyes[0].getBoundingClientRect();
+      const pupilRect = pupils[0].getBoundingClientRect();
+
+      const maxX = (eyeRect.width - pupilRect.width) / 2 - 5;
+      const maxY = (eyeRect.height - pupilRect.height) / 2 - 5;
+
+      const maxScreenDx = window.innerWidth / 2;
+      const maxScreenDy = window.innerHeight / 2;
+
+      let normX = dx / maxScreenDx;
+      let normY = dy / maxScreenDy;
+
+      normX = Math.max(-1, Math.min(1, normX));
+      normY = Math.max(-1, Math.min(1, normY));
+
+      const newTargetX = normX * maxX;
+      const newTargetY = normY * maxY;
+
+      // Update target only if movement is bigger than threshold to avoid jitter
+      if (Math.abs(newTargetX - targetMoveX) > MOVE_THRESHOLD || Math.abs(newTargetY - targetMoveY) > MOVE_THRESHOLD) {
+        targetMoveX = newTargetX;
+        targetMoveY = newTargetY;
+      }
+    }
+
+    function animatePupils() {
+      // Smoothly move lastMoveX/Y toward targetMoveX/Y using EMA
+      lastMoveX += (targetMoveX - lastMoveX) * SMOOTHING_ALPHA;
+      lastMoveY += (targetMoveY - lastMoveY) * SMOOTHING_ALPHA;
+
+      pupils[0].style.transform = `translate(${lastMoveX}px, ${lastMoveY}px)`;
+      pupils[1].style.transform = `translate(${lastMoveX}px, ${lastMoveY}px)`;
+    }
+
+    // Set overlay canvas size to match video input size
+    function setupCanvasSize() {
+      overlay.width = MODEL_INPUT_WIDTH;
+      overlay.height = MODEL_INPUT_HEIGHT;
+    }
+
+    setupCanvasSize();
+
+    async function detectEyesLoop() {
+  if (video.readyState < 2) {
+    requestAnimationFrame(detectEyesLoop);
+    return;
+  }
+
+  const offscreen = document.createElement('canvas');
+  offscreen.width = MODEL_INPUT_WIDTH;
+  offscreen.height = MODEL_INPUT_HEIGHT;
+  const offCtx = offscreen.getContext('2d');
+
+  offCtx.save();
+  offCtx.scale(-1, 1);
+  offCtx.drawImage(video, -MODEL_INPUT_WIDTH, 0, MODEL_INPUT_WIDTH, MODEL_INPUT_HEIGHT);
+  offCtx.restore();
+
+  const blob = await new Promise(resolve => offscreen.toBlob(resolve, 'image/jpeg'));
+
+  const formData = new FormData();
+  formData.append('file', blob, 'frame.jpg');
+
+  try {
+    const res = await fetch('http://127.0.0.1:8000/detect_biggest_face/', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await res.json();
+
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+    if (data.face) {
+      // Reset detection lost timer & flags
+      lostDetectionTime = null;
+      returningToCenter = false;
+
+      const box = data.face;
+      ctx.strokeStyle = 'lime';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(box.x, box.y, box.width, box.height);
+      ctx.font = '16px sans-serif';
+      ctx.fillStyle = 'lime';
+      ctx.fillText('Face', box.x, box.y > 20 ? box.y - 5 : box.y + 15);
+
+      updatePupilsByScreenPosition(box.x, box.y, box.width, box.height);
+    } else {
+      // Detection lost
+      if (!lostDetectionTime) lostDetectionTime = performance.now();
+      const elapsed = performance.now() - lostDetectionTime;
+
+      if (elapsed >= WAIT_BEFORE_RESET_MS) {
+        returningToCenter = true;
+        targetMoveX = 0;
+        targetMoveY = 0;
+      }
+    }
+  } catch (e) {
+    console.error('Detection error:', e);
+    if (!lostDetectionTime) lostDetectionTime = performance.now();
+    const elapsed = performance.now() - lostDetectionTime;
+
+    if (elapsed >= WAIT_BEFORE_RESET_MS) {
+      returningToCenter = true;
+      targetMoveX = 0;
+      targetMoveY = 0;
+    }
+  }
+
+  animatePupils();
+  requestAnimationFrame(detectEyesLoop);
+}
+
+    window.addEventListener('resize', setupCanvasSize);
+
+    detectEyesLoop();
+
+  </script>
+</body>
+</html>
