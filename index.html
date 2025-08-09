@@ -449,14 +449,17 @@
                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
                 this.recognition = new SpeechRecognition();
                 
-                this.recognition.continuous = true;
+                // Modified settings for better Android compatibility
+                this.recognition.continuous = false; // Changed to false for Android
                 this.recognition.interimResults = true;
+                this.recognition.maxAlternatives = 1;
                 this.recognition.lang = 'en-US';
 
                 this.recognition.onstart = () => {
                     this.isListening = true;
                     this.updateUI();
                     this.startVolumeMonitoring();
+                    console.log('Recognition started'); // Debug log
                 };
 
                 this.recognition.onresult = (event) => {
@@ -480,23 +483,33 @@
 
                 this.recognition.onerror = (event) => {
                     console.error('Speech recognition error:', event.error);
-                    if (event.error !== 'no-speech') {
-                        this.showError(`Recognition error: ${event.error}`);
-                        this.addToTranscript(`Error: ${event.error}`, 'system');
+                    
+                    // Handle specific Android errors
+                    switch(event.error) {
+                        case 'network':
+                            this.showError('Network error. Please check your connection.');
+                            break;
+                        case 'not-allowed':
+                        case 'permission-denied':
+                            this.showError('Microphone access denied. Please allow microphone access.');
+                            break;
+                        case 'no-speech':
+                            console.log('No speech detected'); // Don't show error for silence
+                            this.restartRecognition();
+                            break;
+                        default:
+                            if (event.error !== 'aborted') {
+                                this.showError(`Recognition error: ${event.error}`);
+                            }
                     }
                 };
 
                 this.recognition.onend = () => {
-                    if (this.isListening) {
-                        setTimeout(() => {
-                            if (this.isListening) {
-                                try {
-                                    this.recognition.start();
-                                } catch (error) {
-                                    console.log('Recognition restart handled');
-                                }
-                            }
-                        }, 100);
+                    console.log('Recognition ended'); // Debug log
+                    
+                    // Only restart if we're still supposed to be listening
+                    if (this.isListening && !this.isProcessing) {
+                        this.restartRecognition();
                     }
                 };
             }
@@ -551,7 +564,6 @@
             }
 
             startListening() {
-                // Stop any currently playing audio
                 if (this.currentAudio && !this.currentAudio.paused) {
                     this.currentAudio.pause();
                     this.currentAudio.currentTime = 0;
@@ -560,13 +572,22 @@
                 }
                 
                 try {
-                    this.recognition.start();
-                    this.toggleBtn.textContent = '⏸';
-                    this.toggleBtn.title = 'Stop Recording';
-                    this.toggleBtn.classList.add('recording');
-                    this.clearError();
-                    this.addToTranscript('Started listening...', 'system');
+                    // Request microphone permission explicitly for Android
+                    navigator.mediaDevices.getUserMedia({ audio: true })
+                        .then(() => {
+                            this.recognition.start();
+                            this.toggleBtn.textContent = '⏸';
+                            this.toggleBtn.title = 'Stop Recording';
+                            this.toggleBtn.classList.add('recording');
+                            this.clearError();
+                            this.addToTranscript('Started listening...', 'system');
+                        })
+                        .catch(error => {
+                            console.error('Microphone access error:', error);
+                            this.showError('Please allow microphone access to use voice recognition.');
+                        });
                 } catch (error) {
+                    console.error('Recognition start error:', error);
                     this.showError('Failed to start speech recognition');
                 }
             }
