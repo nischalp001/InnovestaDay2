@@ -161,6 +161,7 @@
             color: white;
             line-height: 1.5;
             word-wrap: break-word;
+            position: relative;  /* Add this */
         }
 
         .user .message-content {
@@ -170,6 +171,33 @@
 
         .bot .message-content {
             background: rgba(255, 255, 255, 0.08);
+        }
+
+        .play-button {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .play-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.1);
+        }
+
+        .play-button svg {
+            width: 12px;
+            height: 12px;
+            fill: white;
         }
 
         .typing-indicator {
@@ -654,6 +682,65 @@
             messageContent.className = 'message-content';
             messageContent.textContent = content;
             
+            // Add play button only for bot messages
+            if (sender === 'bot') {
+                const playButton = document.createElement('button');
+                playButton.className = 'play-button';
+                playButton.innerHTML = `
+                    <svg viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                `;
+                
+                // Create audio element
+                const audio = document.createElement('audio');
+                messageContent.dataset.speaking = 'false';
+                
+                playButton.addEventListener('click', () => {
+                    if (messageContent.dataset.speaking === 'false') {
+                        // Stop all other playing audio
+                        document.querySelectorAll('audio').forEach(a => a.pause());
+                        document.querySelectorAll('.message-content').forEach(m => m.dataset.speaking = 'false');
+                        
+                        // Create new speech
+                        const speech = new SpeechSynthesisUtterance(content);
+                        speech.rate = 1;
+                        speech.pitch = 1;
+                        
+                        // Update button state
+                        messageContent.dataset.speaking = 'true';
+                        playButton.innerHTML = `
+                            <svg viewBox="0 0 24 24">
+                                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                            </svg>
+                        `;
+                        
+                        // Handle speech end
+                        speech.onend = () => {
+                            messageContent.dataset.speaking = 'false';
+                            playButton.innerHTML = `
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M8 5v14l11-7z"/>
+                                </svg>
+                            `;
+                        };
+                        
+                        speechSynthesis.speak(speech);
+                    } else {
+                        // Stop speaking
+                        speechSynthesis.cancel();
+                        messageContent.dataset.speaking = 'false';
+                        playButton.innerHTML = `
+                            <svg viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                        `;
+                    }
+                });
+                
+                messageContent.appendChild(playButton);
+            }
+            
             messageDiv.appendChild(avatar);
             messageDiv.appendChild(messageContent);
             
@@ -729,20 +816,32 @@
         }
 
         // Focus input on load and initialize speech recognition
-        window.addEventListener('load', () => {
-            messageInput.focus();
-            initializeSpeechRecognition();
-            
-            // Start listening for voice commands
-            if (continuousRecognition) {
-                try {
-                    continuousRecognition.start();
-                    console.log('Started listening for voice commands...');
-                } catch (error) {
-                    console.error('Error starting speech recognition:', error);
-                }
+        // Focus input on load and initialize speech recognition
+window.addEventListener('load', () => {
+    messageInput.focus();
+    
+    // Simple mobile device detection
+    const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    if (!isMobile) {
+        // Desktop behavior: initialize and start listening immediately
+        initializeSpeechRecognition();
+        if (continuousRecognition) {
+            try {
+                continuousRecognition.start();
+                console.log('Started listening for voice commands (desktop)...');
+            } catch (error) {
+                console.error('Error starting speech recognition:', error);
             }
-        });
+        }
+    } else {
+        // Mobile behavior: initialize but don't auto-start
+        initializeSpeechRecognition();
+        console.log('Mobile device detected — speech recognition not auto-started.');
+        console.log('Tap a button or trigger manually to start listening.');
+    }
+});
+
     </script>
 </body>
 </html>
