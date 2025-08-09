@@ -645,6 +645,11 @@
         });
 
         function sendMessage(voiceMessage = null) {
+            // If voiceMessage is an event object (from click handler), ignore it
+            if (voiceMessage && voiceMessage.type === 'click') {
+                voiceMessage = null;
+            }
+            
             const message = voiceMessage || messageInput.value.trim();
             if (!message) return;
 
